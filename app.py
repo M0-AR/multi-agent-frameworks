@@ -3,7 +3,11 @@ import json
 import pandas as pd
 import altair as alt
 import plotly.graph_objects as go
+import plotly.io as pio
 import io
+
+# Configure plotly to use 'json' engine instead of 'orjson'
+pio.json.config.default_engine = 'json'
 
 # Load scoring scales
 SCORING_SCALES = {
@@ -239,7 +243,23 @@ def create_radar_chart(data, selected_frameworks, criteria):
         title="Framework Comparison Radar Chart",
         height=600
     )
+    
+    # Convert to JSON using the default engine
+    fig.update_layout(template='plotly')
     return fig
+
+def convert_df_to_data(edited_df):
+    """Convert the edited DataFrame back to the original data structure"""
+    data = {}
+    for _, row in edited_df.iterrows():
+        framework = row['Framework']
+        data[framework] = {'evaluations': {}}
+        for criterion in SCORING_SCALES.keys():
+            data[framework]['evaluations'][criterion] = {
+                'rating': row[f"{criterion} Rating"],
+                'details': row[f"{criterion} Details"]
+            }
+    return data
 
 def main():
     st.set_page_config(layout="wide")
@@ -304,6 +324,9 @@ def main():
         key="framework_table"
     )
     
+    # Convert edited DataFrame back to data structure
+    updated_data = convert_df_to_data(edited_df)
+    
     # Add download button for Excel file with both sheets
     if st.download_button(
         label="Download Excel file",
@@ -313,13 +336,13 @@ def main():
     ):
         st.success("File downloaded successfully!")
     
-    # Calculate total scores
+    # Calculate total scores using updated data
     st.header("Total Scores Comparison")
-    scores = calculate_scores(data)
+    scores = calculate_scores(updated_data)
     df_scores = pd.DataFrame(list(scores.items()), columns=['Framework', 'Total Score'])
     df_scores = df_scores.sort_values('Total Score', ascending=False)
     
-    # Create bar chart using Altair
+    # Create bar chart using Altair with updated data
     chart = alt.Chart(df_scores).mark_bar().encode(
         x='Framework',
         y='Total Score',
@@ -329,32 +352,30 @@ def main():
     )
     st.altair_chart(chart, use_container_width=True)
     
-    # Framework comparison
+    # Framework comparison with updated data
     st.header("Framework Comparison")
     selected_frameworks = st.multiselect(
         "Select frameworks to compare",
-        options=list(data.keys()),
-        default=list(data.keys())[:3]
+        options=list(updated_data.keys()),
+        default=list(updated_data.keys())[:3]
     )
     
     if selected_frameworks:
-        # Create comparison table
+        # Create comparison table with updated data
         comparison_data = []
         for framework in selected_frameworks:
             row = {'Framework': framework}
             for criterion in criteria:
-                rating = data[framework]['evaluations'][criterion]['rating']
+                rating = updated_data[framework]['evaluations'][criterion]['rating']
                 score = get_numerical_score(criterion, rating)
                 row[criterion] = f"{rating} ({score})"
             comparison_data.append(row)
         
         comparison_df = pd.DataFrame(comparison_data)
-        
-        # Display comparison table
         st.dataframe(comparison_df, use_container_width=True)
         
-        # Add radar chart below the table
-        radar_fig = create_radar_chart(data, selected_frameworks, criteria)
+        # Add radar chart with updated data
+        radar_fig = create_radar_chart(updated_data, selected_frameworks, criteria)
         st.plotly_chart(radar_fig, use_container_width=True)
 
 def create_excel_file(data_df):
